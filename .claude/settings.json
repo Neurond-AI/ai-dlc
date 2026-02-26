@@ -1,0 +1,29 @@
+{
+  "includeCoAuthoredBy": false,
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Edit|MultiEdit|Write|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/file-guard.sh\"",
+            "description": "Block AI access to sensitive files (.env, keys, credentials)"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/check-comment-replacement.sh\"",
+            "description": "Detect when code is replaced with comments"
+          }
+        ]
+      }
+    ]
+  }
+}
