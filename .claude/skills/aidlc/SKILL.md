@@ -11,14 +11,89 @@ You are now executing the AI-DLC (AI-Driven Development Lifecycle) workflow. Thi
 
 ## Your Role
 
-You will act as an AI development guide, orchestrating the workflow by:
-1. Reading and following the rules defined in the supporting rule-detail files
-2. Asking clarifying questions directly in conversation (chat-based Q&A)
-3. Creating deliverables in the `aidlc-docs/` directory
-4. Tracking progress in `aidlc-docs/aidlc-state.md`
-5. Waiting for user approval at designated approval gates
-6. Maintaining an audit trail in `aidlc-docs/audit.md`
-7. **Delegating to specialized agents and loading relevant skills for each phase**
+You are the **team lead** orchestrating an AI development team. You MUST:
+1. Read and follow the rules defined in the supporting rule-detail files
+2. Ask clarifying questions directly in conversation (chat-based Q&A)
+3. Create deliverables in the `aidlc-docs/` directory
+4. Track progress in `aidlc-docs/aidlc-state.md`
+5. Wait for user approval at designated approval gates
+6. Maintain an audit trail in `aidlc-docs/audit.md`
+7. **Spawn parallel agent teams for concurrent work** using `TeamCreate` + `Task` tools
+8. **Actually execute tests** (not just generate instruction files) at the Build & Test stage
+
+## Parallel Execution Strategy (Agent Teams)
+
+**CRITICAL**: Claude Code supports agent teams for parallel work. You MUST use them for independent tasks instead of running everything sequentially.
+
+### How to Execute in Parallel
+
+**For independent research/exploration** (no file conflicts):
+```
+Use multiple Task tool calls in a SINGLE message to spawn parallel subagents:
+- Task 1: researcher agent exploring technology A
+- Task 2: researcher agent exploring technology B
+- Task 3: scout agent searching codebase
+All three run concurrently and return results.
+```
+
+**For implementation with file ownership** (parallel coding):
+```
+1. Use TeamCreate to create a team (e.g., "aidlc-impl")
+2. Use TaskCreate to create tasks with clear file ownership boundaries
+3. Spawn teammates via Task tool with team_name parameter
+4. Each teammate owns specific files/directories - NO overlapping edits
+5. Teammates work in parallel, communicate via SendMessage
+6. Use TaskUpdate to track completion, then assign next tasks
+```
+
+**For testing** (parallel test execution):
+```
+Spawn multiple Task agents concurrently:
+- Task 1: tester agent running unit tests
+- Task 2: tester agent running E2E tests with playwright-skill
+- Task 3: code-review-guardian running security audit
+All run in parallel, results collected when done.
+```
+
+### When to Use Parallel vs Sequential
+
+| Phase | Execution | Why |
+|-------|-----------|-----|
+| Brainstorm | Parallel subagents | Independent research angles |
+| Spec (SDD) | Sequential | Each phase depends on previous |
+| Design | Parallel subagents | Independent domain research |
+| Implement | **Agent Team** (parallel teammates) | Each unit has separate files |
+| Build & Test | **Parallel subagents** | Unit tests + E2E + review run concurrently |
+| Review | Parallel subagents | Security, quality, performance reviews are independent |
+| Secure | Parallel subagents | OWASP checks across different domains |
+| Ship | Sequential | Deployment steps depend on each other |
+
+### Parallel Implementation Pattern
+
+During the IMPLEMENT stage, when multiple units need to be built:
+
+```
+Step 1: TeamCreate with team name "aidlc-construction"
+Step 2: TaskCreate for each unit with clear file boundaries:
+  - Task: "Build auth module" → owns src/auth/*, tests/auth/*
+  - Task: "Build API routes" → owns src/api/*, tests/api/*
+  - Task: "Build UI components" → owns src/components/*, tests/components/*
+Step 3: Spawn fullstack-developer teammates, one per unit
+Step 4: Each teammate claims a task, works independently
+Step 5: When all complete, proceed to Build & Test
+```
+
+### Parallel Testing Pattern
+
+During BUILD & TEST, launch ALL test types concurrently:
+
+```
+Launch in a SINGLE message (parallel Task calls):
+- Task(tester): "Run unit tests: npm test -- --coverage"
+- Task(tester): "Run E2E tests using playwright-skill and playwright-cli"
+- Task(code-review-guardian): "Security audit focusing on OWASP Top 10"
+Collect all results, generate combined test summary.
+```
 
 ## Rule Detail Files
 
@@ -110,7 +185,7 @@ This section defines which specialized agents should be delegated to at each AI-
   - `frontend/frontend-css-styling-expert` + skill: `ui-styling`, `aesthetic`
   - `database/database-postgres-expert` + skill: `databases`
 
-#### Test Stage
+#### Test Stage (MUST ACTUALLY EXECUTE TESTS)
 - **Primary Agent**: `tester` - Testing, coverage analysis, QA
 - **Skills to Load**: `debugging/systematic-debugging`, `debugging/verification-before-completion`
 - **E2E Agent**: `e2e/e2e-playwright-expert`
@@ -120,7 +195,47 @@ This section defines which specialized agents should be delegated to at each AI-
   - `playwright-cli` - Interactive browser sessions, snapshots, form testing, visual debugging
   - `chrome-devtools` - DevTools-based debugging, performance profiling, network analysis
 - **Testing Agent**: `testing/testing-expert`
-- **Screenshot & Snapshot Storage**: All E2E test artifacts (screenshots, snapshots, traces, videos) are saved to `plans/e2e/[timestamp]-[test-topic]/` for review and audit (see E2E Testing Strategy below)
+- **Screenshot & Snapshot Storage**: All E2E test artifacts saved to `plans/e2e/[timestamp]-[test-topic]/`
+
+**CRITICAL - Test Execution Instructions**:
+The Build & Test stage MUST actually run tests, not just generate instruction files. Follow this concrete execution pattern:
+
+```
+Step 1: Detect project's test runner and dev server
+  - Check package.json for test scripts (vitest, jest, mocha, pytest, etc.)
+  - Check for existing test files (*.test.ts, *.spec.ts, *_test.go, etc.)
+  - Detect dev server command (npm run dev, pnpm dev, etc.)
+
+Step 2: Run unit tests (via Bash tool)
+  - Execute: npm test / pnpm test / vitest run / jest --coverage
+  - Capture output, parse pass/fail counts and coverage %
+  - If tests fail, fix them before proceeding
+
+Step 3: Run E2E tests IN PARALLEL with unit tests (via parallel Task calls)
+  - Spawn tester agent: "Start the dev server, then run E2E tests using
+    playwright-skill (auto-detect server, write test to /tmp, execute).
+    Save screenshots to plans/e2e/[timestamp]/screenshots/.
+    Generate report at plans/e2e/[timestamp]/report.md."
+  - The tester agent should:
+    a. Use playwright-skill to detect dev servers
+    b. Write E2E test scripts based on spec-defined user flows
+    c. Execute via playwright-skill's run.js
+    d. Take screenshots at each step
+    e. Save all artifacts to plans/e2e/
+
+Step 4: Collect results and generate combined summary
+  - Unit test results (pass/fail/coverage)
+  - E2E test results (pass/fail/screenshots)
+  - Security findings (if running review in parallel)
+  - Write combined summary to aidlc-docs/construction/build-and-test/
+```
+
+**Parallel Test Execution** (spawn ALL in one message):
+```
+Task 1 (tester): "Run unit tests: [detected test command] --coverage"
+Task 2 (tester): "Run E2E tests using playwright-skill, save to plans/e2e/"
+Task 3 (code-review-guardian): "Security review of implemented code"
+```
 
 #### Review Stage
 - **Primary Agent**: `code-review-guardian` - Code review for implemented features
@@ -325,6 +440,8 @@ From this point forward, follow the orchestration logic in `rule-details/core-wo
 6. **Quality Standards**: Follow content validation rules for all deliverables
 7. **Skill-Powered**: Load relevant skills for each agent at each phase
 8. **Agent Delegation**: Use specialized agents (see Agent-Skill Mapping) rather than generic responses
+9. **Parallel by Default**: Use parallel Task calls or Agent Teams for independent work. NEVER run independent tasks sequentially when they can run concurrently.
+10. **Execute, Don't Just Document**: At Build & Test stage, ACTUALLY RUN the test commands (npm test, playwright, etc.) — don't just generate instruction files. Tests must execute and produce real pass/fail results.
 
 ## Deliverables Directory Structure
 

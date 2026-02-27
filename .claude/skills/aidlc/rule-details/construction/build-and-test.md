@@ -1,6 +1,8 @@
 # Build and Test
 
-**Purpose**: Build all units and execute comprehensive testing strategy
+**Purpose**: Build all units AND execute comprehensive testing — not just generate documentation.
+
+**CRITICAL**: This stage MUST actually run tests via Bash commands and tester/playwright agents. Do NOT only create instruction files. The primary output is real test results (pass/fail/coverage), with documentation as secondary.
 
 ## Prerequisites
 - Code Generation must be complete for all units
@@ -9,19 +11,91 @@
 
 ---
 
-## Step 1: Analyze Testing Requirements
+## Step 0: Detect Project Test Infrastructure (DO THIS FIRST)
 
-Analyze the project to determine appropriate testing strategy:
-- **Unit tests**: Already generated per unit during code generation
-- **Integration tests**: Test interactions between units/services
-- **Performance tests**: Load, stress, and scalability testing
-- **End-to-end tests**: Complete user workflows
-- **Contract tests**: API contract validation between services
-- **Security tests**: Vulnerability scanning, penetration testing
+Before anything else, detect the project's test setup:
+
+```bash
+# Detect package manager and test scripts
+cat package.json | grep -A 10 '"scripts"'
+
+# Check for test framework config
+ls vitest.config.* jest.config.* playwright.config.* pytest.ini .mocharc.* 2>/dev/null
+
+# Check for existing test files
+find . -name "*.test.*" -o -name "*.spec.*" -o -name "*_test.*" | head -20
+
+# Check for dev server
+cat package.json | grep -E '"(dev|start|serve)"'
+```
+
+Store detected info for use in later steps.
 
 ---
 
-## Step 2: Generate Build Instructions
+## Step 1: Build the Project (Execute via Bash)
+
+**Actually run the build**:
+```bash
+# Install dependencies (detect package manager)
+npm install  # or pnpm install / yarn install
+
+# Build the project
+npm run build  # or detected build command
+```
+
+If the build fails, fix errors before proceeding. Log build output.
+
+---
+
+## Step 2: Execute Unit Tests (Parallel with E2E)
+
+**MUST actually run tests**. Launch unit tests and E2E tests in PARALLEL using multiple Task agent calls in a single message:
+
+### Unit Tests (Task 1 — tester agent):
+```bash
+# Run unit tests with coverage
+npm test -- --coverage  # or vitest run --coverage / jest --coverage / pytest --cov
+```
+
+Parse the output for:
+- Total tests, passed, failed, skipped
+- Coverage percentage per file
+- Any failing test details
+
+### E2E Tests (Task 2 — tester agent with playwright skills):
+
+The E2E tester agent MUST:
+1. Load `playwright-skill` to auto-detect dev servers
+2. Start the dev server if not running
+3. Write E2E test scripts based on SDD spec-defined user flows
+4. Execute tests via playwright-skill's `run.js`
+5. Take screenshots at each step, save to `plans/e2e/[timestamp]-[topic]/screenshots/`
+6. Generate report at `plans/e2e/[timestamp]-[topic]/report.md`
+
+```bash
+# Start dev server in background (if needed)
+npm run dev &
+DEV_PID=$!
+
+# Detect server URL via playwright-skill helper
+cd .claude/skills/playwright-skill && node -e "require('./lib/helpers').detectDevServers().then(s => console.log(JSON.stringify(s)))"
+
+# Run E2E test script
+cd .claude/skills/playwright-skill && node run.js /tmp/playwright-test-e2e.js
+
+# Stop dev server
+kill $DEV_PID 2>/dev/null
+```
+
+### Security Review (Task 3 — code-review-guardian agent):
+Run in parallel with tests. Reviews implemented code for OWASP Top 10 vulnerabilities.
+
+---
+
+## Step 3: Generate Build Instructions (Documentation)
+
+Create `aidlc-docs/construction/build-and-test/build-instructions.md`:
 
 Create `aidlc-docs/construction/build-and-test/build-instructions.md`:
 
